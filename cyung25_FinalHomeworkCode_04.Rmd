@@ -1,0 +1,181 @@
+---
+title: "cyung25_FinalHomeworkCode_04"
+author: "Charles Yung"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+## Question 1: Make the Z-prop test have p1 and n1 have the estimated proportion and sample size, p2 and n2 default to null unless in event of two-sample. 
+## Now ensure p1, n1, p0 are provided as input checks. Also explicitly code for confidence level between zero and 1. 
+Z.prop.test<-function(p1,n1,p2=NULL,n2=NULL,p0,alternative="two.sided",conf.level=0.95) {
+    check_validity <- function(p, n) { 
+  if (n * p <= 5 || n * (1 - p) <= 5) { 
+    warning ("Normal approximation might not valid: n * p and n * (1 - p) should both be > 5.") 
+    } 
+  if(is.na(p1))
+    stop("must enter value for 'p1'")
+  if(is.na(n1))
+    stop("must enter value for 'n1'")
+  if(is.na(p0))
+    stop("You must enter a value for 'p0'")
+  if (length(conf.level) != 1 || !is.finite(conf.level) ||
+        conf.level <= 0 || conf.level >= 1) {
+    stop("'conf.level' must be a single number between 0 and 1") 
+    }
+  }
+ ## validity checks complete. This section ensures normal approximation is valid. 
+## Now run the one-sample z-test. Test if the sample proportion differs from the population proportion. 
+if (is.null(p2) || is.null(n2)) {
+  
+  check_validity(p1, n1) 
+  phat1 <- p1
+  pi <- p0
+  n <- n1
+  z <- (phat1 - pi) / sqrt(pi * ((1 - pi) / n1)) # The denominator in this function is the standard error.
+  names(z) <- "Z score" 
+
+  alt <- tolower(alternative)
+  if (alternative == "two.sided") {
+    stop("You must choose alternative = 'greater' or 'less'")
+  }
+  if (alternative == "two.sided") { #Now we add this to calculate the p-value based on the alternative hypothesis
+    p_value <- 2 * (1 - pnorm(abs(z)))
+  } else if (alternative == "greater") {
+    p_value <- 1 - pnorm(z)
+  } else if (alternative == "less") {
+    p_value <- pnorm(z)
+  }
+
+  margin <- qnorm(1 - (1 - conf.level) / 2) * sqrt(p1 * (1 - p1) / n1)
+  ci <- c(p1 - margin, p1 + margin)
+  attr(ci, "conf.level") <- conf.level
+
+  return(list(
+    Z = z,
+    P = p_value,
+    CI = ci
+  ))
+  
+ } else { # This is the event of a two sample t-test. Begin with checking data validity for both samples
+    check_validity(p1, n1)
+    check_validity(p2, n2)
+
+    pooled_p <- (p1 * n1 + p2 * n2) / (n1 + n2)
+    z <- (p2 - p1) / sqrt(pooled_p * (1 - pooled_p) * (1 / n1 + 1 / n2))
+    names(z) <- "Z score"
+  ## P-value for the two-sample test
+  alt <- tolower(alternative)
+  if (alternative == "two.sided") {
+    p_value <- 2 * (1 - pnorm(abs(z)))
+  } else if (alternative == "greater") {
+    p_value <- 1 - pnorm(z)
+  } else if (alternative == "less") {
+    p_value <- pnorm(z) 
+  } else {
+    stop("alternative must be one of 'two.sided', 'greater', or 'less'")
+  }
+  
+  ## Confidence interval is centered around the observed proportion
+  diff <- p2 - p1
+  margin <- qnorm(1 - (1 - conf.level) / 2) * sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2)
+  ci <- c((p2 - p1) - margin, (p2 - p1) + margin)
+  attr(ci, "conf.level") <- conf.level
+
+  return(list(
+    Z = z, 
+    P = p_value, 
+    CI = ci
+  ))
+ }
+}
+```
+
+```{r}
+## One-sample Z-test
+Ztest1 <- Z.prop.test(p1 = 0.8, n1 = 100, p0 = 0.8, alternative = "greater")
+print(Ztest1)
+```
+
+```{r}
+## Two-sample Z-test
+Ztest2 <- Z.prop.test(p1 = 0.2, p0 = 0.2, n1 = 100, p2 = 0.2, n2 = 120, alternative = "less")
+print(Ztest2)
+
+```
+
+
+```{r}
+##Question 2: Create the Linear regression model for longevity and brain size
+library(curl)
+f <- curl("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv")
+data <- read.csv(f, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+library(ggplot2)
+library(dplyr) 
+head(data, 10)
+## create regression model equation
+m1 <- lm(MaxLongevity_m ~ Brain_Size_Species_Mean, data = data)
+summary(m1)
+## Create scatterplot, adding a fitted regression line. 
+ggplot(data, aes(x = Brain_Size_Species_Mean, y = MaxLongevity_m)) +
+  geom_point() +
+  geom_smooth(aes(color = "Prediction Interval", fill = "Prediction Interval"), method = "lm", se = TRUE, level = 0.90) +
+  geom_smooth(aes(color = "Confidence Interval", fill = "Confidence Interval"),method = "lm", se = TRUE, level = 0.95) +
+  geom_text(aes(x = 6, y = 4.2), label = paste0("R² = ", round(summary(m1)$r.squared, 3)), color = "black", size = 4) +
+  scale_fill_manual(name = "Interval Type",
+                    values = c("Confidence Interval" = "red", "Prediction Interval" = "yellow")) +
+  labs(title = "Longevity vs. Brain Size with Intervals",
+       x = "Brain Size (g)", y = "Longevity (months)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+summary(m1)$r.squared
+slope <- coef(m1)[2]
+p_value <- summary(m1)$coefficients[2, 4]
+cat("Slope (β1):", slope, "\n")
+cat("p-value for H0: β1 = 0:", p_value, "\n") 
+confint(m1, level = 0.95)
+predict(m1, data, interval = "prediction", level = 0.90)
+```
+
+
+```{r}
+## This codes for the log graph analyzing Max longevity and Brain Size Species Mean. We should still see a positive correlation between both variables!
+m2 <- lm(log(MaxLongevity_m) ~ log(Brain_Size_Species_Mean), data = data)
+ggplot(data, aes(x = log(Brain_Size_Species_Mean), y = log(MaxLongevity_m))) +
+  geom_point(color = "black") +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  geom_smooth(aes(color = "Prediction Interval", fill = "Prediction Interval"), method = "lm", se = TRUE, level = 0.90) +
+  geom_smooth(aes(color = "Confidence Interval", fill = "Confidence Interval"),method = "lm", se = TRUE, level = 0.95) +
+  labs(title = "Log-Log Plot: Longevity vs. Brain Size",
+       x = "log(Brain Size (g))", 
+       y = "log(Longevity (months))") +
+  geom_text(aes(x = 7, y = 7), label = paste0("y = ", round(coef(m2)[1], 2), " + ", round(coef(m2)[2], 2), "x"), color = "blue", size = 4) +
+  geom_text(aes(x = 6, y = 4.2), label = paste0("R² = ", round(summary(m2)$r.squared, 3)), color = "black", size = 4) +
+  scale_fill_manual(name = "Interval Type",
+                    values = c("Confidence Interval" = "red", "Prediction Interval" = "yellow")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+cat("R-squared for log-log model:", summary(m2)$r.squared, "\n")
+
+confint(m2, level = 0.95)
+predict(m2, data.frame(Brain_Size_Species_Mean = 800), interval = "prediction", level = 0.90)
+summary(m2)$r.squared
+
+slope <- coef(m2)[2]
+p_value <- summary(m2)$coefficients[2, 4]
+cat("Slope (β1):", slope, "\n")
+cat("p-value for H0: β1 = 0:", p_value, "\n") 
+```
+
+Final Comments: The log-transformed model is better because it had a higher r-squared value. Furthermore, the scatterplot of the log-transformed model matches the confidence and prediction intervals better than that of the linear regression model. 
+Anyway, here are five things I struggled with in this assignment (I struggled with a lot more than 5 things).
+
+1- Data organization between the log model and the linear regression model. I tried to code for both of the plots in one chunk, and I kept getting hit with error message after error message. After spending around half a week trying to get it to run as one chunk I bit the bullet and used two. Honestly this was for the best. 
+
+2- This is related to my first issue but another issue was getting my confidence intervals and prediction intervals to show on the plot. Since the intervals are visually overlapped in the scatterplot, I decided to color my confidence intervals red and my prediction intervals yellow, so when the code ran and I saw an orange barrier I knew both confidence and prediciton intervals were present in my graph!
+
+3- Concerning question 1 and making the z-prop-test function, I thought loading a dataset would work at first but then I realized that although I had written most of my code it wouldn't work because the values from the dataset fell outside the range of the function. Therefore, I used input values fro the one-sample and 2-sample tests. 
+
+4- For the linear regression model putting geom_point( ) allowed the individual datapoints to show, but this didn't work for the log model. For the log model, I used geom point (color = black) to get the points to show. This was how I got my graph to turn out. 
+
+5- since the z prop test function was a big chunk, I tried to write my code in multiple small chunks but it wouldn't run properly. Eventually I bit the bullet and put it all in one chunk, then ran the one-sample and two sample tests in smaller chunks to ensure that my code ran. 
